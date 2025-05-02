@@ -107,8 +107,8 @@ int main(){
 }{
     std::cout << "------------ PolyFrac DEMO START ------------" << std::endl;
     double x = 2.1457;
-    Polynomial p1(-3, 1, {2.4, -1., 0, 2, -3.2});
-    Polynomial p2(-1, 7, {-1.5, 2.2, -3, 5, -0.3}, 2);
+    Polynomial p1(0, 2, {1.0, 2.0, 3.0});
+    Polynomial p2(-2, 2, {-1.0, 2.0, -3.0}, 2);
     PolyFrac pf1(p1, p2); // p1(x) / p2(x)
     Product pf2 = p1 / p2;
     for (int n = 0; n < 8; n++){

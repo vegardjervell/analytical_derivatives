@@ -31,6 +31,8 @@ module polynomials
 implicit none
 public
 
+    ! The Polynomial type represents Laurent polynomials with integer exponents and constant spacing
+    ! between exponents (k_step)
     type :: Polynomial
         real, allocatable :: coeff(:)        ! Array of coefficients
         integer :: k_min, k_max, k_step      ! Range and step for exponents (inclusive both k_min and k_max)
@@ -42,6 +44,8 @@ public
         procedure :: print => print_polynomial
     end type Polynomial
 
+    ! The PolyExp type represents functions of the form f(x) * exp[g(x)] where f and g are Laurent polynomials,
+    ! with f being the prefactor (pref) and g being the exponent (expo)
     type :: PolyExp
         type(Polynomial) :: pref
         type(Polynomial) :: expo
@@ -52,6 +56,19 @@ public
         procedure :: get_Gk => polyexp_get_Gk
         procedure :: print => print_polyexp
     end type PolyExp
+
+    ! The PolyFrac type represents Laurent polynomial fractions, f(x) / g(x), with f and g being Laurent polynomials.
+    ! num is the numerator, denom is the denominator.
+    type :: PolyFrac
+      type(Polynomial) :: num
+      type(Polynomial) :: denom
+    contains
+      procedure :: init       => init_polyfrac
+      procedure :: eval       => eval_polyfrac
+      procedure :: derivative => derivative_polyfrac
+      procedure :: get_Hk     => polyfrac_get_Hk
+      procedure :: print      => print_polyfrac
+    end type PolyFrac
 
 contains
 
@@ -308,7 +325,6 @@ subroutine print_polynomial(self)
         if (i > 1) write(*, "(A)", advance="no") " + "
         write(*, "(F6.2,A,I0)", advance="no") self%coeff(i), "*x^", k
     enddo
-    write(*, *)
 end subroutine print_polynomial
 
 !-----------------------------------------------------------------------------
@@ -408,5 +424,104 @@ subroutine print_polyexp(self)
     call self%expo%print()
     write(*, "(A)", advance="no") " ]"
 end subroutine print_polyexp
+
+!-----------------------------------------------------------------------------
+!> Initialize Laurent polynomial fraction,
+!>      p(x) = f(x) / g(x),
+!> where f and g are `Polynomial` objects.
+!> \author VGJ, 2025-05-02
+!-----------------------------------------------------------------------------
+subroutine init_polyfrac(self, num, denom)
+    class(PolyFrac), intent(out) :: self
+    type(Polynomial), intent(in) :: num, denom
+
+    self%num   = num
+    self%denom = denom
+end subroutine init_polyfrac
+
+!-----------------------------------------------------------------------------
+!> Evaluate Laurent polynomial fraction at x
+!> \author VGJ, 2025-05-02
+!-----------------------------------------------------------------------------
+function eval_polyfrac(self, x) result(val)
+    class(PolyFrac), intent(in) :: self
+    real, intent(in)            :: x
+    real                        :: val
+
+    val = self%num%eval(x) / self%denom%eval(x)
+end function eval_polyfrac
+
+!-----------------------------------------------------------------------------
+!> Evaluate polyfrac n'th derivative at x
+!> \author VGJ, 2025-05-02
+!-----------------------------------------------------------------------------
+function derivative_polyfrac(self, x, n) result(val)
+    class(PolyFrac), intent(in) :: self
+    real, intent(in)            :: x
+    integer, intent(in)         :: n
+    real                        :: val
+    integer                     :: k, k_start
+    real                        :: binom_val
+    real                        :: df(n + 1), dg(n + 1)
+
+    do k = 0, n
+      df(k + 1) = self%num%derivative(x, k)
+      dg(k + 1) = self%denom%derivative(x, k)
+    end do
+
+    val = 0.0d0
+    do k = 0, n
+      val = val + binom(n, k) * self%get_Hk(x, k, dg) * df(n - k + 1)
+    end do
+
+    val = val / dg(1)
+end function derivative_polyfrac
+
+!-----------------------------------------------------------------------------
+!> Recursive factors H_k in the memo: https://thermotools.github.io/KineticGas/memo/index.html
+!> \author VGJ, 2025-05-02
+!-----------------------------------------------------------------------------
+function polyfrac_get_Hk(self, x, k, dg) result(Hk)
+    class(PolyFrac), intent(in)    :: self
+    real, intent(in)               :: x
+    integer, intent(in)            :: k
+    real, dimension(:), intent(in) :: dg
+    real                           :: Hk, tmp, Z
+    integer                        :: i, l, max_dg_order, psize
+    integer, allocatable           :: partitions(:,:), partition_sizes(:)
+
+    if (self%denom%k_min >= 0 .and. self%denom%k_max < k) then
+      max_dg_order = self%denom%k_max
+    else
+      max_dg_order = k
+    end if
+
+    call get_partitions(k, max_dg_order, partitions, partition_sizes)
+    Hk = 0.0
+
+    do i = 1, size(partition_sizes)
+      tmp = 1.0
+      do l = 1, partition_sizes(i)
+        if (partitions(i ,l) > max_dg_order) exit
+        tmp = tmp * dg(partitions(i, l) + 1)
+      end do
+      if (tmp /= 0.0) then
+        Z = partition_multiplicity(partitions(i,:), partition_sizes(i))
+        Hk = Hk + Z * tmp * factorial(partition_sizes(i)) * ( (-1.0 / dg(1))**partition_sizes(i) )
+      end if
+    end do
+
+    deallocate(partitions, partition_sizes)
+end function polyfrac_get_Hk
+
+subroutine print_polyfrac(self)
+    class(PolyFrac), intent(in) :: self
+
+    write(*, "(A)", advance="no") "( "
+    call self%num%print()
+    write(*, "(A)", advance="no") " ) / ( "
+    call self%denom%print()
+    write(*, "(A)")            " )"
+end subroutine print_polyfrac
 
 end module polynomials
